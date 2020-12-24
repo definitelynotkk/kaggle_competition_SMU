@@ -1,0 +1,448 @@
+---
+title: "Kaggle - Group5"
+author: 
+- "ZHANG PEIKUN - 01401041"  
+- "MICHELLE KARTOKUSUMO - 01417363"
+- "NAOMI NHA PHAM - 01367089"
+- "APARNA PASSEY - 01427125"
+- "QIN YIPING - 01407263"
+- "CAI SHIYI - 01380757"
+output:
+  html_document:
+    theme: cerulean
+    df_print: paged
+---
+
+
+```{r}
+train = read.csv("Competition_Train.csv")
+
+test = read.csv("Competition_Test.csv")
+
+```
+
+```{r}
+train_factor = train
+test_factor = test
+train_factor$potential_issue = as.factor(train$potential_issue)
+train_factor[18:23] = lapply(train[18:23], as.factor)
+test_factor$potential_issue = as.factor(test$potential_issue)
+test_factor[18:22] = lapply(test[18:22], as.factor)
+library(plyr)
+train_factor$potential_issue = revalue(train_factor$potential_issue, c("1"="Yes","0"="No"))
+train_factor[18:23] = lapply(train_factor[18:23], function(x) revalue(x, c("1"="Yes","0"="No")))
+test_factor$potential_issue = revalue(test_factor$potential_issue, c("1"="Yes","0"="No"))
+test_factor[18:22] = lapply(test_factor[18:22], function(x) revalue(x, c("1"="Yes","0"="No")))
+```
+
+
+```{r}
+library(caret)
+library(e1071)
+```
+
+```{r}
+dim(train)
+```
+
+
+
+
+##analysis of original dataset
+
+```{r}
+library(corrplot)
+correlations <- cor(train[,2:23]) 
+corrplot(correlations, method="circle")
+```
+
+
+```{r}
+par(mfrow=c(1,5))
+for (i in 2:22) {
+  boxplot(train[,i], main=names(train)[i])  
+  cat(i)
+}
+```
+
+```{r}
+
+par(mfrow=c(2,1))
+for (i in 2:22) {
+  hist(train[,i], main=names(train)[i],labels = TRUE)  
+  hist
+}
+
+```
+
+##Data transformation 
+1. log
+2. qubic root
+3. sqare/qubic
+4. qubic root + log
+
+```{r}
+train_tran_log = train
+train_tran_cubicr = train
+train_tran_square = train
+train_tran_cubicr_log = train
+test_tran_log = test
+test_tran_cubicr = test
+test_tran_square = test
+test_tran_cubicr_log = test
+```
+
+```{r}
+for (i in 3:17) {
+  test_tran_log[,i] = log10(test[,i]+2)  
+}
+for (i in 2:17) {
+  test_tran_cubicr[,i] = sign(test[,i]) * abs(test[,i])^(1/3)
+}
+for (i in 2:17) {
+  test_tran_square[,i] = test[,i]^(3)
+}
+
+for (i in 2:17) {
+  test_tran_cubicr_log[,i] = sign(test_tran_cubicr[,i]) * log10(abs(test_tran_cubicr[,i])+1)
+}
+```
+
+```{r}
+
+train_tran_log[,2] = train[,2]
+for (i in 3:17) {
+  train_tran_log[,i] = log10(train[,i]+2)  
+}
+
+for (i in 2:17) {
+  train_tran_cubicr[,i] = sign(train[,i]) * abs(train[,i])^(1/3)
+}
+for (i in 2:17) {
+  train_tran_square[,i] = train[,i]^(3)
+}
+
+for (i in 2:17) {
+  train_tran_cubicr_log[,i] = sign(train_tran_cubicr[,i]) * log10(abs(train_tran_cubicr[,i])+1)
+}
+```
+
+###skewness analysis
+```{r}
+library(psych)
+skew(train_tran_cubicr)
+skew(train_tran_log)
+skew(train_tran_square)
+skew(train_tran_cubicr_log)
+skew(train)
+```
+
+checking NaN values
+```{r}
+sum(is.na(train_tran))
+sum(is.na(train_tran_cubicr_log))
+
+```
+
+
+##comparing processed data with original data 
+```{r}
+
+par(mfrow=c(2,1))
+for (i in 2:22) {
+  hist(train[,i], main=names(train)[i],labels = TRUE)  
+  hist(train_tran_cubicr_log[,i], main=names(train_tran_cubicr)[i],labels = TRUE) 
+  hist
+}
+
+```
+
+
+```{r}
+library(corrplot)
+correlations <- cor(train_tran_cubicr[,2:23]) 
+corrplot(correlations, method="circle")
+```
+
+###correlation extractions
+use absolute value to evaluate. 
+sorted.
+```{r}
+dim(correlations)
+
+View(data.frame(sort(abs(correlations[,22]))))
+```
+
+
+bar plot, only use as references
+```{r}
+train1 = train_tran_cubicr
+train1$potential_issue = as.factor(train1$potential_issue)
+train1[18:23] = lapply(train1[18:22], as.factor)
+for (i in 2:22) {
+  bar_plot <- ggplot(train1, aes(x = train1[,i], fill = went_on_backorder)) + geom_bar(position = 'fill') + theme_bw() +labs(x = names(train1)[i], y = 'went_on_backorder')
+  print(bar_plot)
+}
+
+```
+
+
+
+factorize variables that only contains 0 and 1
+```{r}
+train_tran_log[18:23] = train_factor[18:23]
+train_tran_cubicr[18:23] = train_factor[18:23]
+train_tran_square[18:23] = train_factor[18:23]
+train_tran_cubicr_log[18:23] = train_factor[18:23]
+test_tran_cubicr[18:22] = test_factor[18:22]
+```
+
+#logistic regression model (week6 submission)
+train with the new dataset using logistic regression
+
+```{r}
+library(caret)
+library(glmnet)
+fitControl = trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary)
+```
+
+
+
+```{r}
+set.seed(888)
+modelglm =  train(went_on_backorder ~ . - sku -forecast_9_month -sales_6_month -potential_issue -perf_12_month_avg -ppap_risk -rev_stop ,
+                  data = train_tran_cubicr, 
+                  method = 'glm', 
+                  family = "binomial", 
+                  trControl = fitControl,
+                  metric = "ROC")
+
+
+modelglm
+
+```
+
+
+```{r}
+modelglm$results
+```
+
+extracting coefficients
+```{r}
+variables = modelglm$finalModel
+View(data.frame(variables$coefficients))
+```
+
+
+##Output
+```{r}
+PredBO = predict(modelglm, newdata = test_tran_cubicr, type = "prob")
+PredTest = data.frame(test$sku, PredBO$Yes)
+
+
+colnames(PredTest) = c("sku", "went_on_backorder")
+head(PredTest)
+write.csv(PredTest, "logisticregression.csv", row.names = FALSE)
+```
+
+
+
+
+
+
+***Decisiontree models***
+
+#CART
+
+###dataset analysis
+```{r}
+yes = subset(train, went_on_backorder == 1)
+yes_row = nrow(yes)
+
+yes_row/nrow(train)
+```
+
+
+grid search
+```{r}
+fitControl = trainControl(method = "cv", 
+                          number = 10,
+                          classProbs = TRUE, 
+                          summaryFunction = twoClassSummary,
+                          sampling = "down"
+                          )
+cpGrid = expand.grid(.cp = (1:30)*0.000001)
+```
+
+```{r}
+set.seed(111)
+starttime = proc.time()
+modelcart =  train(went_on_backorder ~  . -sku -potential_issue-rev_stop-stop_auto_buy-oe_constraint-ppap_risk, 
+                 data = train_factor, 
+                 method = 'rpart', 
+                 #family = "binomial", 
+                 #tuneLength = 30, 
+                 tuneGrid = cpGrid,
+                 metric = "ROC",
+                 trControl = fitControl
+                 )
+stoptime = proc.time()
+runtime = stoptime - starttime
+print(runtime)
+modelcart
+```
+```{r}
+#extract the importance value of each variable
+varImp(modelcart)
+View(as.data.frame.list(varImp(modelcart)))
+```
+
+
+```{r}
+Predcart = predict(modelcart, newdata = train_factor, type = "prob")
+```
+
+
+
+
+# Random Forest model
+
+```{r}
+##parallel execution to save time 
+library(doParallel)
+ncores <- detectCores()
+cl <- makeCluster(ncores)
+registerDoParallel(cl, cores = ncores)
+ncores
+```
+
+```{r}
+library(randomForest)
+```
+
+find best mtry value 
+```{r}
+bestMtry <- tuneRF(train_factor[,2:22],train_factor$went_on_backorder, stepFactor = 1.3, improve = 1e-5, ntree = 500)
+```
+
+pass mtry value to train() function
+```{r}
+tunegrid <- expand.grid(.mtry = (6))
+```
+
+
+```{r}
+fitControl = trainControl(method = "cv", 
+                          number =  10,
+                          classProbs = TRUE, 
+                          summaryFunction = twoClassSummary,
+                          # sampling = "up"
+                          )
+```
+
+```{r}
+set.seed(123)
+starttime = proc.time()
+modelrf_nosampling =  train(went_on_backorder ~  . -sku, 
+                 data = train_factor, 
+                 method = 'rf', 
+                 family = "binomial", 
+                 trControl = fitControl,
+                 tuneGrid = tunegrid, 
+                 ntree = 500,
+                 min_n = 1,
+                 metric = "ROC"
+                 )
+stoptime = proc.time()
+runtime = stoptime - starttime
+print(runtime)
+```
+```{r}
+fitControl = trainControl(method = "cv", 
+                          number =  10,
+                          classProbs = TRUE, 
+                          summaryFunction = twoClassSummary,
+                          sampling = "up"
+                          )
+```
+```{r}
+set.seed(123)
+starttime = proc.time()
+modelrf1 =  train(went_on_backorder ~  . -sku, 
+                 data = train_factor, 
+                 method = 'rf', 
+                 family = "binomial", 
+                 trControl = fitControl,
+                 tuneGrid = tunegrid, 
+                 ntree = 500,
+                 min_n = 1,
+                 metric = "ROC"
+                 )
+stoptime = proc.time()
+runtime = stoptime - starttime
+print(runtime)
+```
+```{r}
+modelrf_nosampling$finalModel
+```
+
+```{r}
+modelrf1$finalModel
+modelrf1
+```
+
+```{r}
+confusionMatrix(modelrf_nosampling, "none")
+confusionMatrix(modelrf1, "none")
+
+48040/(48040+1584)
+6850/(6850+2445)
+
+47190/(47190+2434)
+7522/(7522+1773)
+```
+
+
+
+```{r}
+Predrf = predict(modelrf1, newdata = test_factor, type = "prob")
+PredTestrf = data.frame(test$sku, Predrf$Yes)
+
+
+colnames(PredTestrf) = c("sku", "went_on_backorder")
+head(PredTestrf)
+write.csv(PredTestrf, "rf_mtry6_tree500_upsampling.csv", row.names = FALSE)
+```
+
+```{r}
+stopCluster(cl)
+on.exit()
+```
+```{r}
+registerDoSEQ()
+```
+
+
+
+
+***model ensembling***
+
+#tried but no improvement. maybe need more models.
+```{r}
+testpredcart = predict(modelcart, newdata = test_factor, type = 'prob')
+testpredglm = predict(modelglm, newdata = test_tran_cubicr, type = 'prob')
+testpredrf = predict(modelrf1, newdata = test_factor, type = 'prob')
+```
+
+use
+```{r}
+test$blended = (0.963398*testpredrf$Yes + 0.9291786*testpredglm$Yes +0.9236126*testpredcart$Yes)/(0.963398+0.9291786+0.9236126)
+```
+
+```{r}
+PredTestensembled = data.frame(test$sku, test$blended)
+colnames(PredTestensembled) = c("sku", "went_on_backorder")
+#write.csv(PredTestensembled, "weightensemble.csv", row.names = FALSE)
+```
+
+
